@@ -28,7 +28,7 @@ jobs:
       needs.build.result == 'success' && 
       (github.ref == 'refs/heads/main') &&
       github.event_name == 'push'
-    uses: ./.github/workflows/deploy.yml
+    uses: ./.github/workflows/deploy.yaml
     with:
       environment: main
       image_tag: latest
@@ -42,7 +42,7 @@ jobs:
       needs.build.result == 'success' && 
       (github.ref == 'refs/heads/main') &&
       github.event_name == 'workflow_dispatch'
-    uses: ./.github/workflows/deploy.yml
+    uses: ./.github/workflows/deploy.yaml
     with:
       environment: main
       image_tag: latest
