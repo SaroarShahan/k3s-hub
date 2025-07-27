@@ -30,7 +30,6 @@ jobs:
       github.event_name == 'push'
     uses: ./.github/workflows/deploy.yaml
     with:
-      environment: main
       image_tag: latest
     secrets: inherit
   

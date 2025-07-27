@@ -124,6 +124,7 @@ jobs:
         
         echo "=== Updated Deployment Manifest ==="
         cat k3s/deploy.yaml
+        
     - name: Deploy to K3s Cluster
       run: |
         echo "🚀 Starting deployment to K3s cluster..."
