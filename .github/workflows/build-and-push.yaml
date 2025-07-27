@@ -7,6 +7,14 @@ on:
     branches:
       - main
   workflow_dispatch:
+  workflow_call: # Allow other workflows to call this
+    outputs:
+      image:
+        description: "Built Docker image name"
+        value: ${{ jobs.build-and-push.outputs.image }}
+      image-digest:
+        description: "Docker image digest"
+        value: ${{ jobs.build-and-push.outputs.image-digest }}
 
 env:
   REGISTRY: ghcr.io
@@ -55,4 +63,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-    
+      - name: Output image
+        id: image
+        run: echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_OUTPUT
