@@ -4,8 +4,6 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches:
-      - main
   workflow_dispatch:
   workflow_call: # Allow other workflows to call this
     outputs:

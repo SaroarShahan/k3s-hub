@@ -21,16 +21,16 @@ jobs:
     secrets: inherit
 
    # Deploy to staging (automatic on main branch)
-  deploy:
-    needs: build
-    if: |
-      always() && 
-      needs.build.result == 'success' && 
-      (github.ref == 'refs/heads/main') &&
-      github.event_name == 'push'
-    uses: ./.github/workflows/deploy.yaml
-    with:
-      environment: main
-      image_tag: latest
-    secrets: inherit
+  # deploy:
+  #   needs: build
+  #   if: |
+  #     always() && 
+  #     needs.build.result == 'success' && 
+  #     (github.ref == 'refs/heads/main') &&
+  #     github.event_name == 'push'
+  #   uses: ./.github/workflows/deploy.yaml
+  #   with:
+  #     environment: main
+  #     image_tag: latest
+  #   secrets: inherit
   
