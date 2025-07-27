@@ -45,11 +45,22 @@ jobs:
       run: |
         if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
           IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+        elif [ "${{ github.event_name }}" == "workflow_call" ]; then
+          IMAGE_TAG="${{ inputs.image_tag }}"
         else
           IMAGE_TAG="latest"
         fi
         echo "tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
         echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+    - name: Replace image in deployment manifest
+      run: |
+        # Update deploy.yaml with the correct image
+        sed -i "s|ghcr.io/${{ env.USER_NAME }}/${{ env.IMAGE_NAME }}:latest|${{ steps.image-tag.outputs.image }}|g" k3s/deploy.yaml
+
+        # Show the updated deployment
+        echo "=== Updated Deployment Manifest ==="
+        cat k3s/deploy.yaml
 
     - name: Replace image in deployment manifest
       run: |
