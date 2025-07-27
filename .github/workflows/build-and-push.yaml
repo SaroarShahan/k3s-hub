@@ -4,15 +4,9 @@ name: Build and Push Docker Image
 
 on:
   push:
+    branches:
+      - main
   workflow_dispatch:
-  workflow_call: # Allow other workflows to call this
-    outputs:
-      image:
-        description: "Built Docker image name"
-        value: ${{ jobs.build-and-push.outputs.image }}
-      image-digest:
-        description: "Docker image digest"
-        value: ${{ jobs.build-and-push.outputs.image-digest }}
 
 env:
   REGISTRY: ghcr.io
@@ -60,6 +54,33 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Output image
-        id: image
-        run: echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_OUTPUT
+      - name: Generate deployment manifest
+        run: |
+          # Create updated deployment file
+          sed "s|ghcr.io/saroarshahan/.*:latest|${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest|g" k3s/deploy.yaml > k3s/deploy-updated.yaml
+          
+          echo "### 🚀 Manual Deployment Instructions" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image built successfully:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**To deploy manually on your K3s server:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# SSH to your K3s server" >> $GITHUB_STEP_SUMMARY
+          echo "ssh ubuntu@your-k3s-server" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Create registry secret" >> $GITHUB_STEP_SUMMARY
+          echo "kubectl create secret docker-registry ghcr-secret \\" >> $GITHUB_STEP_SUMMARY
+          echo "  --docker-server=ghcr.io \\" >> $GITHUB_STEP_SUMMARY
+          echo "  --docker-username=${{ github.actor }} \\" >> $GITHUB_STEP_SUMMARY
+          echo "  --docker-password=YOUR_GITHUB_TOKEN \\" >> $GITHUB_STEP_SUMMARY
+          echo "  --docker-email=${{ github.actor }}@users.noreply.github.com" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Apply deployment" >> $GITHUB_STEP_SUMMARY
+          echo "kubectl apply -f - << 'EOF'" >> $GITHUB_STEP_SUMMARY
+          cat k3s/deploy-updated.yaml >> $GITHUB_STEP_SUMMARY
+          echo "EOF" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Check status" >> $GITHUB_STEP_SUMMARY
+          echo "kubectl get pods -l app=html-app" >> $GITHUB_STEP_SUMMARY
+          echo "kubectl get services html-app-service" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
