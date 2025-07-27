@@ -32,14 +32,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
-    
-    environment: 
-      name: main
-      url: http://${{ env.K3S_SERVER }}:30100
 
     permissions:
       contents: read
-      deployments: none
 
     steps:
     - name: Checkout repository
