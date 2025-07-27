@@ -63,9 +63,23 @@ jobs:
         cat k3s/deploy.yaml
 
     - name: Setup SSH
-      uses: webfactory/ssh-agent@v0.8.0
-      with:
-        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      run: |
+        # Create SSH directory
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        
+        # Add private key
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        
+        # Test if key is valid
+        if [ ! -s ~/.ssh/id_rsa ]; then
+          echo "❌ SSH private key is empty or not found!"
+          echo "Please check SSH_PRIVATE_KEY secret in repository settings"
+          exit 1
+        fi
+        
+        echo "✅ SSH key setup completed"
 
     - name: Add SSH host key
       run: |
