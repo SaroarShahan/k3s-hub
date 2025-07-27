@@ -48,6 +48,13 @@ jobs:
         echo "tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
         echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
+    - name: Enable SSH and Firewall
+      run: |
+        sudo systemctl enable ssh
+        sudo ufw allow ssh # For UFW
+        sudo firewall-cmd --add-service=ssh --permanent # For firewalld
+        sudo firewall-cmd --reload # For firewalld
+
     - name: Setup SSH with Enhanced Connectivity
       run: |
         # Create SSH directory
@@ -124,7 +131,7 @@ jobs:
         
         echo "=== Updated Deployment Manifest ==="
         cat k3s/deploy.yaml
-        
+
     - name: Deploy to K3s Cluster
       run: |
         echo "🚀 Starting deployment to K3s cluster..."
