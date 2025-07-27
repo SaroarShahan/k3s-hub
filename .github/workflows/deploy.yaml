@@ -7,20 +7,20 @@ on:
     workflows: ["Build and Push Docker Image"]
     types:
       - completed
-    branches: [ main, master ]
-  workflow_dispatch: # Manual trigger
+    branches: [ main ]
+  workflow_dispatch:
+  workflow_call: # Allow other workflows to call this
     inputs:
       environment:
         description: 'Deployment environment'
-        required: true
-        default: 'main'
-        type: choice
-        options:
-        - main
+        required: false
+        default: 'production'
+        type: string
       image_tag:
         description: 'Docker image tag to deploy'
         required: false
         default: 'latest'
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -34,7 +34,7 @@ jobs:
     if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
     
     environment: 
-      name: ${{ github.event.inputs.environment || 'main' }}
+      name: ${{ github.event.inputs.environment || 'production' }}
       url: http://${{ env.K3S_SERVER }}:30100
 
     permissions:

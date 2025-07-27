@@ -17,7 +17,7 @@ env:
 jobs:
   # Build and push (calls separate workflow)
   build:
-    uses: ./.github/workflows/build-and-push.yaml
+    uses: ./build-and-push.yaml
     secrets: inherit
 
    # Deploy to staging (automatic on main branch)
@@ -28,7 +28,7 @@ jobs:
       needs.build.result == 'success' && 
       (github.ref == 'refs/heads/main') &&
       github.event_name == 'push'
-    uses: ./.github/workflows/deploy.yml
+    uses: ./deploy.yml
     with:
       environment: main
       image_tag: latest
