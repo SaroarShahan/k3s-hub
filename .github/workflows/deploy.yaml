@@ -50,10 +50,12 @@ jobs:
 
     - name: Enable SSH and Firewall
       run: |
+        sudo ufw enable
+        sudo apt update
+        sudo apt install firewalld
+        sudo systemctl enable firewalld
+        sudo systemctl start firewalld
         sudo systemctl enable ssh
-        sudo ufw allow ssh # For UFW
-        sudo firewall-cmd --add-service=ssh --permanent # For firewalld
-        sudo firewall-cmd --reload # For firewalld
 
     - name: Setup SSH with Enhanced Connectivity
       run: |
