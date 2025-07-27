@@ -9,13 +9,8 @@ on:
       - completed
     branches: [ main ]
   workflow_dispatch:
-  workflow_call: # Allow other workflows to call this
+  workflow_call:
     inputs:
-      environment:
-        description: 'Deployment environment'
-        required: false
-        default: 'main'
-        type: string
       image_tag:
         description: 'Docker image tag to deploy'
         required: false
@@ -53,18 +48,9 @@ jobs:
         echo "tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
         echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
-    - name: Replace image in deployment manifest
+    - name: Setup SSH with Enhanced Connectivity
       run: |
-        # Update deploy.yaml with the correct image
-        sed -i "s|ghcr.io/${{ env.USER_NAME }}/${{ env.IMAGE_NAME }}:latest|${{ steps.image-tag.outputs.image }}|g" k3s/deploy.yaml
-
-        # Show the updated deployment
-        echo "=== Updated Deployment Manifest ==="
-        cat k3s/deploy.yaml
-
-    - name: Setup SSH and Host Keys
-      run: |
-        # Create SSH directory and set permissions
+        # Create SSH directory
         mkdir -p ~/.ssh
         chmod 700 ~/.ssh
         
@@ -72,116 +58,171 @@ jobs:
         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         
-        # Create SSH config to handle host keys
+        # Validate SSH key
+        if [ ! -s ~/.ssh/id_rsa ]; then
+          echo "❌ SSH private key is empty"
+          exit 1
+        fi
+        
+        # Create SSH config with robust settings
         cat > ~/.ssh/config << EOF
-        Host ${{ env.K3S_SERVER }}
+        Host k3s-server
           HostName ${{ env.K3S_SERVER }}
           User ubuntu
           IdentityFile ~/.ssh/id_rsa
           StrictHostKeyChecking no
           UserKnownHostsFile /dev/null
           LogLevel ERROR
+          ConnectTimeout 30
+          ServerAliveInterval 60
+          ServerAliveCountMax 3
+          TCPKeepAlive yes
         EOF
         chmod 600 ~/.ssh/config
         
-        # Test SSH connection
-        echo "Testing SSH connection..."
-        ssh -o ConnectTimeout=10 ubuntu@${{ env.K3S_SERVER }} "echo 'SSH connection successful'" || {
-          echo "❌ SSH connection failed"
-          echo "Checking server connectivity..."
-          ping -c 3 ${{ env.K3S_SERVER }} || echo "Server not reachable"
+        # Enhanced connectivity test
+        echo "🔍 Testing K3s server connectivity..."
+        
+        # Ping test with timeout
+        if timeout 15s ping -c 3 ${{ env.K3S_SERVER }} > /dev/null 2>&1; then
+          echo "✅ Server is reachable via ping"
+        else
+          echo "❌ Server ping failed - checking if server is accessible"
+        fi
+        
+        # Port connectivity test
+        if timeout 15s nc -zv ${{ env.K3S_SERVER }} 22 2>/dev/null; then
+          echo "✅ SSH port 22 is open"
+        else
+          echo "❌ SSH port 22 is not accessible"
+          echo "Possible issues:"
+          echo "1. VM is stopped or suspended"
+          echo "2. SSH service not running"
+          echo "3. Firewall blocking port 22"
+          echo "4. Network configuration changed"
           exit 1
-        }
+        fi
+        
+        # SSH authentication test
+        echo "🔐 Testing SSH authentication..."
+        if timeout 30s ssh k3s-server "echo 'SSH authentication successful'"; then
+          echo "✅ SSH connection established successfully"
+        else
+          echo "❌ SSH authentication failed"
+          echo "Troubleshooting steps:"
+          echo "1. Verify SSH_PRIVATE_KEY secret contains the full private key"
+          echo "2. Ensure public key is added to ~/.ssh/authorized_keys on server"
+          echo "3. Check SSH service: sudo systemctl status ssh"
+          echo "4. Check SSH logs: sudo journalctl -u ssh -n 20"
+          exit 1
+        fi
 
-    - name: Copy deployment files to server
+    - name: Update deployment manifest
       run: |
-        # Copy all k3s manifests to server
-        scp -r k3s/ ubuntu@${{ env.K3S_SERVER }}:~/
-
-    - name: Create registry secret
+        # Update k3s deployment with correct image
+        sed -i "s|ghcr.io/${{ env.USER_NAME }}/${{ env.IMAGE_NAME }}:latest|${{ steps.image-tag.outputs.image }}|g" k3s/deploy.yaml
+        
+        echo "=== Updated Deployment Manifest ==="
+        cat k3s/deploy.yaml
+    - name: Deploy to K3s Cluster
       run: |
-        ssh ubuntu@${{ env.K3S_SERVER }} << 'EOF'
-          # Use k3s kubectl if regular kubectl has issues
-          if ! command -v kubectl &> /dev/null; then
-            alias kubectl="sudo k3s kubectl"
-          fi
-
-          # Create registry secret for private repos
+        echo "🚀 Starting deployment to K3s cluster..."
+        
+        # Copy deployment files
+        echo "📁 Copying deployment files..."
+        scp -r k3s/ k3s-server:~/deployment/
+        
+        # Execute deployment on K3s server
+        ssh k3s-server << 'EOF'
+          echo "🔧 Setting up kubectl..."
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          
+          # Verify K3s cluster is healthy
+          echo "🏥 Checking K3s cluster health..."
+          kubectl get nodes || {
+            echo "❌ K3s cluster is not healthy"
+            sudo systemctl status k3s
+            exit 1
+          }
+          
+          # Create registry secret
+          echo "🔑 Creating registry secret..."
           kubectl create secret docker-registry ghcr-secret \
-            --docker-server=${{ env.REGISTRY }} \
+            --docker-server=ghcr.io \
             --docker-username=${{ github.actor }} \
-            --docker-password=${{ secrets.GHCR_TOKEN }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
             --docker-email=${{ github.actor }}@users.noreply.github.com \
             --dry-run=client -o yaml | kubectl apply -f -
-        EOF
-
-    - name: Deploy to K3s
-      id: deploy
-      run: |
-        ssh ubuntu@${{ env.K3S_SERVER }} << 'EOF'
-          # Use k3s kubectl if regular kubectl has issues
-          if ! command -v kubectl &> /dev/null; then
-            alias kubectl="sudo k3s kubectl"
-          fi
-
-          # Apply all k3s manifests
-          kubectl apply -f k3s/
-
-          # Wait for rollout to complete (shorter timeout for k3s)
-          kubectl rollout status deployment/html-app --timeout=180s
-
+          
+          # Apply deployment
+          echo "📦 Applying K3s deployment..."
+          kubectl apply -f ~/deployment/k3s/
+          
+          # Wait for rollout
+          echo "⏳ Waiting for deployment rollout..."
+          kubectl rollout status deployment/html-app --timeout=300s
+          
           # Show deployment status
-          echo "=== K3s Deployment Status ==="
+          echo "📊 Deployment Status:"
           kubectl get deployments html-app -o wide
-          
-          echo "=== Pods Status ==="
           kubectl get pods -l app=html-app -o wide
-          
-          echo "=== Service Status ==="
           kubectl get services html-app-service -o wide
           
-          echo "=== K3s Nodes ==="
-          kubectl get nodes -o wide
+          echo "✅ Deployment completed successfully!"
         EOF
 
-    - name: Health check
+    - name: Health Check & Verification
       run: |
-        ssh ubuntu@${{ env.K3S_SERVER }} << 'EOF'
-          # Wait for pods to be ready
-          kubectl wait --for=condition=ready pod -l app=html-app --timeout=120s
+        echo "🏥 Performing health checks..."
+        
+        ssh k3s-server << 'EOF'
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
           
-          # Test application endpoint
-          echo "🔍 Testing application health..."
+          # Wait for pods to be ready
+          echo "🔄 Waiting for pods to be ready..."
+          kubectl wait --for=condition=ready pod -l app=html-app --timeout=180s
+          
+          # Application health check
+          echo "🌐 Testing application endpoint..."
           for i in {1..5}; do
             if curl -f -s http://localhost:30100 > /dev/null; then
-              echo "✅ Health check passed (attempt $i)"
+              echo "✅ Health check passed (attempt $i/5)"
+              curl -s http://localhost:30100 | head -n 5
               break
             else
-              echo "❌ Health check failed (attempt $i), retrying in 10s..."
+              echo "⚠️ Health check failed (attempt $i/5), retrying in 10s..."
               sleep 10
             fi
           done
           
-          # Final health check
-          curl -f http://localhost:30100 || exit 1
+          # Final verification
+          if curl -f -s http://localhost:30100 > /dev/null; then
+            echo "🎉 Application is healthy and responding!"
+          else
+            echo "❌ Application health check failed"
+            kubectl logs -l app=html-app --tail=20
+            exit 1
+          fi
         EOF
 
-    - name: Post deployment summary
-      run: |
-        echo "### 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
-        echo "- **Environment**: ${{ github.event.inputs.environment || 'main' }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Image**: ${{ steps.image-tag.outputs.image }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Server**: ${{ env.K3S_SERVER }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **URL**: http://${{ env.K3S_SERVER }}:30100" >> $GITHUB_STEP_SUMMARY
-        echo "- **Status**: ✅ Deployed Successfully" >> $GITHUB_STEP_SUMMARY
-        echo "- **Timestamp**: $(date -u)" >> $GITHUB_STEP_SUMMARY
-
-    - name: Notify deployment status
+    - name: Deployment Summary
       if: always()
       run: |
+        echo "### 🚀 K3s Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| **Image** | \`${{ steps.image-tag.outputs.image }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Server** | \`${{ env.K3S_SERVER }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Port** | \`30100\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Status** | ${{ job.status == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Timestamp** | \`$(date -u)\` |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
         if [ "${{ job.status }}" == "success" ]; then
-          echo "🎉 Deployment completed successfully!"
-          echo "🌐 Application is live at: http://${{ env.K3S_SERVER }}:30100"
+          echo "**🌐 Access URL:** http://${{ env.K3S_SERVER }}:30100" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🎉 **Deployment completed successfully!**" >> $GITHUB_STEP_SUMMARY
         else
-          echo "❌ Deployment failed. Check the logs above for details."
+          echo "❌ **Deployment failed. Check logs for details.**" >> $GITHUB_STEP_SUMMARY
         fi
