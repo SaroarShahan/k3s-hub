@@ -62,9 +62,9 @@ jobs:
         echo "=== Updated Deployment Manifest ==="
         cat k3s/deploy.yaml
 
-    - name: Setup SSH
+    - name: Setup SSH and Host Keys
       run: |
-        # Create SSH directory
+        # Create SSH directory and set permissions
         mkdir -p ~/.ssh
         chmod 700 ~/.ssh
         
@@ -72,18 +72,26 @@ jobs:
         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         
-        # Test if key is valid
-        if [ ! -s ~/.ssh/id_rsa ]; then
-          echo "❌ SSH private key is empty or not found!"
-          echo "Please check SSH_PRIVATE_KEY secret in repository settings"
-          exit 1
-        fi
+        # Create SSH config to handle host keys
+        cat > ~/.ssh/config << EOF
+        Host ${{ env.K3S_SERVER }}
+          HostName ${{ env.K3S_SERVER }}
+          User ubuntu
+          IdentityFile ~/.ssh/id_rsa
+          StrictHostKeyChecking no
+          UserKnownHostsFile /dev/null
+          LogLevel ERROR
+        EOF
+        chmod 600 ~/.ssh/config
         
-        echo "✅ SSH key setup completed"
-
-    - name: Add SSH host key
-      run: |
-        ssh-keyscan -H ${{ env.K3S_SERVER }} >> ~/.ssh/known_hosts
+        # Test SSH connection
+        echo "Testing SSH connection..."
+        ssh -o ConnectTimeout=10 ubuntu@${{ env.K3S_SERVER }} "echo 'SSH connection successful'" || {
+          echo "❌ SSH connection failed"
+          echo "Checking server connectivity..."
+          ping -c 3 ${{ env.K3S_SERVER }} || echo "Server not reachable"
+          exit 1
+        }
 
     - name: Copy deployment files to server
       run: |
