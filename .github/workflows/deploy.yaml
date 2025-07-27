@@ -39,7 +39,7 @@ jobs:
 
     permissions:
       contents: read
-      deployments: read
+      deployments: write
 
     steps:
     - name: Checkout repository
