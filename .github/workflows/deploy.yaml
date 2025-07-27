@@ -14,7 +14,7 @@ on:
       environment:
         description: 'Deployment environment'
         required: false
-        default: 'production'
+        default: 'main'
         type: string
       image_tag:
         description: 'Docker image tag to deploy'
@@ -34,7 +34,7 @@ jobs:
     if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
     
     environment: 
-      name: ${{ github.event.inputs.environment || 'production' }}
+      name: main
       url: http://${{ env.K3S_SERVER }}:30100
 
     permissions:
@@ -59,11 +59,11 @@ jobs:
     - name: Replace image in deployment manifest
       run: |
         # Update deploy.yaml with the correct image
-        sed -i "s|ghcr.io/${{ env.USER_NAME }}/${{ env.IMAGE_NAME }}:latest|${{ steps.image-tag.outputs.image }}|g" k8s/deploy.yaml
-        
+        sed -i "s|ghcr.io/${{ env.USER_NAME }}/${{ env.IMAGE_NAME }}:latest|${{ steps.image-tag.outputs.image }}|g" k3s/deploy.yaml
+
         # Show the updated deployment
         echo "=== Updated Deployment Manifest ==="
-        cat k8s/deploy.yaml
+        cat k3s/deploy.yaml
 
     - name: Setup SSH
       uses: webfactory/ssh-agent@v0.8.0
@@ -76,8 +76,8 @@ jobs:
 
     - name: Copy deployment files to server
       run: |
-        # Copy all k8s manifests to server
-        scp -r k8s/ ubuntu@${{ env.K3S_SERVER }}:~/
+        # Copy all k3s manifests to server
+        scp -r k3s/ ubuntu@${{ env.K3S_SERVER }}:~/
 
     - name: Create registry secret
       run: |
@@ -105,8 +105,8 @@ jobs:
             alias kubectl="sudo k3s kubectl"
           fi
 
-          # Apply all k8s manifests
-          kubectl apply -f k8s/
+          # Apply all k3s manifests
+          kubectl apply -f k3s/
 
           # Wait for rollout to complete (shorter timeout for k3s)
           kubectl rollout status deployment/html-app --timeout=180s
@@ -150,7 +150,7 @@ jobs:
     - name: Post deployment summary
       run: |
         echo "### 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
-        echo "- **Environment**: ${{ github.event.inputs.environment || 'staging' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Environment**: ${{ github.event.inputs.environment || 'main' }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Image**: ${{ steps.image-tag.outputs.image }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Server**: ${{ env.K3S_SERVER }}" >> $GITHUB_STEP_SUMMARY
         echo "- **URL**: http://${{ env.K3S_SERVER }}:30100" >> $GITHUB_STEP_SUMMARY
