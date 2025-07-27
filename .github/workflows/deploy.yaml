@@ -62,15 +62,6 @@ jobs:
         echo "=== Updated Deployment Manifest ==="
         cat k3s/deploy.yaml
 
-    - name: Replace image in deployment manifest
-      run: |
-        # Update deploy.yaml with the correct image
-        sed -i "s|${{ env.IMAGE_NAME }}:latest|${{ steps.image-tag.outputs.image }}|g" k3s/deploy.yaml
-
-        # Show the updated deployment
-        echo "=== Updated Deployment Manifest ==="
-        cat k3s/deploy.yaml
-
     - name: Setup SSH
       uses: webfactory/ssh-agent@v0.8.0
       with:
