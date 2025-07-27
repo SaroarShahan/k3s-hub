@@ -54,7 +54,7 @@ jobs:
     - name: Replace image in deployment manifest
       run: |
         # Update deploy.yaml with the correct image
-        sed -i "s|ghcr.io/${{ env.USER_NAME }}/${{ env.IMAGE_NAME }}:latest|${{ steps.image-tag.outputs.image }}|g" k3s/deploy.yaml
+        sed -i "s|ghcr.io/${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest|${{ steps.image-tag.outputs.image }}|g" k3s/deploy.yaml
 
         # Show the updated deployment
         echo "=== Updated Deployment Manifest ==="
