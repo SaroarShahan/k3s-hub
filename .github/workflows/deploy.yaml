@@ -35,78 +35,47 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Login to GHCR
-      uses: docker/login-action@v3
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
       with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ env.USER_NAME }}
-        password: ${{ secrets.GHCR_TOKEN }}
+        version: 'v1.28.0'
 
-    - name: Determine image tag
-      id: image-tag
+    - name: Configure kubectl for k3s
       run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          IMAGE_TAG="${{ github.event.inputs.image_tag }}"
-        elif [ "${{ github.event_name }}" == "workflow_call" ]; then
-          IMAGE_TAG="${{ inputs.image_tag }}"
-        else
-          IMAGE_TAG="latest"
-        fi
-        echo "tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-        echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
-
-    - name: Update deployment manifest
+        mkdir -p $HOME/.kube
+        echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+        sudo chown $(whoami):staff $HOME/.kube/config
+        
+        kubectl config current-context
+    
+    - name: Create namespace if not exists
       run: |
-        # Update k3s deployment with correct image
-        sed -i "s|ghcr.io/${{ env.USER_NAME }}/${{ env.IMAGE_NAME }}:latest|${{ steps.image-tag.outputs.image }}|g" k3s/deploy.yaml
-        
-        echo "=== Updated Deployment Manifest ==="
-        cat k3s/deploy.yaml
-
-    - name: Deploy to K3s via SSH
-      uses: appleboy/ssh-action@v0.1.5
-      with:
-        host: ${{ secrets.K3S_SERVER}}
-        username: ${{ env.USER_NAME }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        script: |
-          kubectl set image deployment/html-app html-app=ghcr.io/${{ github.repository }}:latest
-          kubectl rollout status deployment/html-app
-
-    - name: Deploy to K3s
+        kubectl create namespace html-app --dry-run=client -o yaml | kubectl apply -f -
+    
+    - name: Create GHCR pull secret
       run: |
-        echo "🚀 Deploying to K3s cluster..."
+        kubectl create secret docker-registry ghcr-secret \
+          --docker-server=ghcr.io \
+          --docker-username=${{ github.actor }} \
+          --docker-password=${{ secrets.GHCR_PATH }} \
+          --namespace=html-app \
+          --dry-run=client -o yaml | kubectl apply -f -
+    
+    - name: Deploy to k3s
+      run: |
+        # Replace image tag in deployment
+        sed -i "s|IMAGE_TAG|${{ needs.build-and-push.outputs.image-tag }}|g" k8s/deployment.yaml
         
-        # Copy files and deploy
-        scp -r k3s/ k3s-server:~/deployment/
-        
-        ssh k3s-server << 'EOF'
-          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-          
-          # Create registry secret
-          kubectl create secret docker-registry ghcr-secret \
-            --docker-server=${{ env.REGISTRY }} \
-            --docker-username=${{ env.USER_NAME }} \
-            --docker-password=${{ secrets.GHCR_TOKEN }} \
-            --docker-email=${{ env.USER_NAME }}@users.noreply.github.com \
-            --dry-run=client -o yaml | kubectl apply -f -
-          
-          # Apply deployment
-          kubectl apply -f ~/deployment/k3s/
-          kubectl rollout status deployment/html-app --timeout=300s
-          
-          # Show status
-          kubectl get pods -l app=html-app
-          kubectl get services
-          
-          # Health check
-          if curl -f -s http://localhost:30100 > /dev/null; then
-            echo "✅ Application is healthy!"
-          else
-            echo "❌ Health check failed"
-            kubectl logs -l app=html-app --tail=10
-          fi
-        EOF
+        # Apply all manifests
+        kubectl apply -f k8s/ -n html-app
+
+        # Wait for deployment to be ready
+        kubectl rollout status deployment/html-app -n html-app --timeout=300s
+   
+    - name: Verify deployment
+      run: |
+        kubectl get pods -n html-app
+        kubectl get services -n html-app
 
     - name: Deployment Summary
       if: always()
