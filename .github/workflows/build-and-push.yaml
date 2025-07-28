@@ -86,7 +86,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "# Apply deployment" >> $GITHUB_STEP_SUMMARY
           echo "kubectl apply -f - << 'EOF'" >> $GITHUB_STEP_SUMMARY
-          cat k3s/deploy-updated.yaml >> $GITHUB_STEP_SUMMARY
+          cat k8s/deploy-updated.yaml >> $GITHUB_STEP_SUMMARY
           echo "EOF" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "# Check status" >> $GITHUB_STEP_SUMMARY
