@@ -1,0 +1,135 @@
+# .github/workflows/deploy.yml
+
+name: Deploy to K3s
+
+on:
+  workflow_run:
+    workflows: ["Build and Push Docker Image"]
+    types:
+      - completed
+    branches: [ main ]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy'
+        required: false
+        default: 'latest'
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  K3S_SERVER: ${{ secrets.K3S_SERVER }}
+  USER_NAME: saroarshahan
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
+
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Login to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ env.USER_NAME }}
+        password: ${{ secrets.GHCR_TOKEN }}
+
+    - name: Determine image tag
+      id: image-tag
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+        elif [ "${{ github.event_name }}" == "workflow_call" ]; then
+          IMAGE_TAG="${{ inputs.image_tag }}"
+        else
+          IMAGE_TAG="latest"
+        fi
+        echo "tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+        echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+    - name: Update deployment manifest
+      run: |
+        # Update k3s deployment with correct image
+        sed -i "s|ghcr.io/${{ env.USER_NAME }}/${{ env.IMAGE_NAME }}:latest|${{ steps.image-tag.outputs.image }}|g" k3s/deploy.yaml
+        
+        echo "=== Updated Deployment Manifest ==="
+        cat k3s/deploy.yaml
+
+    - name: Setup SSH with Enhanced Connectivity
+      run: |
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        
+        cat > ~/.ssh/config << EOF
+        Host k3s-server
+          HostName ${{ env.K3S_SERVER }}
+          User ubuntu
+          IdentityFile ~/.ssh/id_rsa
+          StrictHostKeyChecking no
+          UserKnownHostsFile /dev/null
+          ConnectTimeout 30
+        EOF
+        chmod 600 ~/.ssh/config
+        
+        # Test connectivity
+        echo "🔍 Testing server connectivity..."
+        if timeout 30s ssh k3s-server "echo 'SSH OK'"; then
+          echo "✅ SSH connection successful"
+        else
+          echo "❌ SSH connection failed"
+          exit 1
+        fi
+
+    - name: Deploy to K3s
+      run: |
+        echo "🚀 Deploying to K3s cluster..."
+        
+        # Copy files and deploy
+        scp -r k3s/ k3s-server:~/deployment/
+        
+        ssh k3s-server << 'EOF'
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          
+          # Create registry secret
+          kubectl create secret docker-registry ghcr-secret \
+            --docker-server=${{ env.REGISTRY }} \
+            --docker-username=${{ env.USER_NAME }} \
+            --docker-password=${{ secrets.GHCR_TOKEN }} \
+            --docker-email=${{ env.USER_NAME }}@users.noreply.github.com \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Apply deployment
+          kubectl apply -f ~/deployment/k3s/
+          kubectl rollout status deployment/html-app --timeout=300s
+          
+          # Show status
+          kubectl get pods -l app=html-app
+          kubectl get services
+          
+          # Health check
+          if curl -f -s http://localhost:30100 > /dev/null; then
+            echo "✅ Application is healthy!"
+          else
+            echo "❌ Health check failed"
+            kubectl logs -l app=html-app --tail=10
+          fi
+        EOF
+
+    - name: Deployment Summary
+      if: always()
+      run: |
+        echo "### 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Image**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Server**: \`${{ env.K3S_SERVER }}\`" >> $GITHUB_STEP_SUMMARY  
+        echo "- **Status**: ${{ job.status == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **URL**: http://${{ env.K3S_SERVER }}:30100" >> $GITHUB_STEP_SUMMARY
