@@ -66,8 +66,8 @@ jobs:
       - name: Generate deployment manifest
         run: |
           # Create updated deployment file
-          sed "s|ghcr.io/saroarshahan/.*:latest|${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest|g" k3s/deploy.yaml > k3s/deploy-updated.yaml
-          
+          sed "s|ghcr.io/saroarshahan/.*:latest|${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest|g" k8s/deploy.yaml > k8s/deploy-updated.yaml
+
           echo "### 🚀 Manual Deployment Instructions" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Image built successfully:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
