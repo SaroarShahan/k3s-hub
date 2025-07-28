@@ -25,7 +25,7 @@ env:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
 
     permissions:
@@ -76,7 +76,7 @@ jobs:
         
         # Show what we're deploying
         cat k8s/deployment.yaml
-        
+
     - name: Deploy to local k3s
       run: |
         # Apply all manifests
