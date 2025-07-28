@@ -63,32 +63,15 @@ jobs:
         echo "=== Updated Deployment Manifest ==="
         cat k3s/deploy.yaml
 
-    - name: Setup SSH with Enhanced Connectivity
-      run: |
-        mkdir -p ~/.ssh
-        chmod 700 ~/.ssh
-        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        
-        cat > ~/.ssh/config << EOF
-        Host k3s-server
-          HostName ${{ env.K3S_SERVER }}
-          User ubuntu
-          IdentityFile ~/.ssh/id_rsa
-          StrictHostKeyChecking no
-          UserKnownHostsFile /dev/null
-          ConnectTimeout 30
-        EOF
-        chmod 600 ~/.ssh/config
-        
-        # Test connectivity
-        echo "🔍 Testing server connectivity..."
-        if timeout 30s ssh k3s-server "echo 'SSH OK'"; then
-          echo "✅ SSH connection successful"
-        else
-          echo "❌ SSH connection failed"
-          exit 1
-        fi
+    - name: Deploy to K3s via SSH
+      uses: appleboy/ssh-action@v0.1.5
+      with:
+        host: ${{ secrets.K3S_SERVER}}
+        username: ${{ env.USER_NAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          kubectl set image deployment/html-app html-app=ghcr.io/${{ github.repository }}:${{ github.sha }}
+          kubectl rollout status deployment/html-app
 
     - name: Deploy to K3s
       run: |
