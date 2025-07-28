@@ -70,7 +70,7 @@ jobs:
         username: ${{ env.USER_NAME }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          kubectl set image deployment/html-app html-app=ghcr.io/${{ github.repository }}:${{ github.sha }}
+          kubectl set image deployment/html-app html-app=ghcr.io/${{ github.repository }}:latest
           kubectl rollout status deployment/html-app
 
     - name: Deploy to K3s
