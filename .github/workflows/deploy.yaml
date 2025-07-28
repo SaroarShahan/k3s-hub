@@ -43,7 +43,7 @@ jobs:
     - name: Configure kubectl for k3s
       run: |
         mkdir -p $HOME/.kube
-        echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+        echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
         sudo chown $(whoami):staff $HOME/.kube/config
 
         sed -i 's/127.0.0.1/${{ secrets.K3S_SERVER }}/g' $HOME/.kube/config
